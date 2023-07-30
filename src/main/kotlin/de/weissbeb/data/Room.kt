@@ -159,9 +159,10 @@ class Room(
                         curWord.transformToUnderscores()
                     }
                 )
-                player.socket.send(Frame.Text(gson.toJson(phaseChange)))
+                player.socket.send(Frame.Text(gson.toJson(gameState)))
             }
         }
+        player.socket.send(Frame.Text(gson.toJson(phaseChange)))
     }
 
     suspend fun checkWordAndRewardAndNotifyPlayers(message: ChatMessage) : Boolean {
