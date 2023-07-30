@@ -28,10 +28,16 @@ fun Route.gameWebSocketRoute() {
                         return@standardWebSocket
                     }
                     val player = Player(payload.userName, socket, payload.clientId)
+                    server.playerJoined(player)
                     if (!room.containsPlayer(player.username)) {
-                        server.playerJoined(player)
                         room.addPlayer(player.clientId, player.username, socket)
+                    } else {
+                        //case: player disconnects and reconnects immediately and is faster than ping
+                        val playerInRoom = room.players.find { it.clientId == clientId }
+                        playerInRoom?.socket = socket
+                        playerInRoom?.startPinging()
                     }
+
                 }
 
                 is DrawData -> {
@@ -55,6 +61,10 @@ fun Route.gameWebSocketRoute() {
                     if (!room.checkWordAndRewardAndNotifyPlayers(payload)) {
                         room.broadcast(message)
                     }
+                }
+
+                is Ping -> { //pong, actually
+                    server.players[clientId]?.receivedPong()
                 }
             }
 
@@ -99,6 +109,7 @@ fun Route.standardWebSocket(
                         Constants.TYPE_PHASE_CHANGE -> PhaseChange::class.java
                         Constants.TYPE_CHOSEN_WORD -> ChosenWord::class.java
                         Constants.TYPE_GAME_STATE -> GameState::class.java
+                        Constants.TYPE_PING -> Ping::class.java
                         else -> BaseModel::class.java
                     }
                     val payload = gson.fromJson(msg, type)
