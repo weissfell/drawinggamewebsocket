@@ -63,13 +63,38 @@ class Room(
     }
 
     suspend fun addPlayer(clientId: String, userName: String, socket: WebSocketSession): Player {
-        val playerAdded = Player(userName, socket, clientId)
+        var index2Add = players.size -1
+        val playerAdded = if(leftPlayers.contains(clientId)){
+            //first - handle player reconnecting after connection lost
+            val leftPlayer = leftPlayers[clientId]
+            leftPlayer?.first?.let {
+                it.socket = socket //socket needs to be updated as we have a new connection
+                it.isDrawing = drawingPlayer?.clientId == clientId
+                index2Add = leftPlayer.second
+
+                playerRemoveJobs[clientId]?.cancel()
+                playerRemoveJobs.remove(clientId)
+                leftPlayers.remove(clientId)
+                it
+            } ?: Player(userName, socket, clientId)
+        } else {
+            Player(userName, socket, clientId)
+        }
+
+        index2Add = when {
+            players.isEmpty() -> 0
+            index2Add >= players.size -> players.size - 1
+            else -> index2Add
+        }
         /*
             players is immutable. So we replace the entire list with a new one...
             If we'd made id mutable and use players.add(playerAdded) because that could lead to multiple threads access
             the same mutable list and possibly change the index of entries
          */
-        players = players + playerAdded
+        //but still we need a mutable list temporary - in case a player rejoins instead of a new player arriving
+        val tmpPlayers = players.toMutableList()
+        tmpPlayers.add(index2Add, playerAdded)
+        players = tmpPlayers.toList()
 
         if (players.size == 1) {
             phase = Phase.WAITING_FOR_PLAYERS
