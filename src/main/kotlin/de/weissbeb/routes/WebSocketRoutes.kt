@@ -108,7 +108,13 @@ fun Route.standardWebSocket(
         } catch (e: Exception) {
             e.printStackTrace()
         } finally {
-            // handle disconnects
+            // handle disconnects - get reference to player that has clientId of the session...
+            val playerWithClientId = server.getRoomWithClientId(session.clientId)?.players?.find {
+                it.clientId == session.clientId
+            }
+            if (playerWithClientId != null) { //meaning: in any room there must be a player with this id
+                server.playerLeft(session.clientId)
+            }
         }
     }
 }

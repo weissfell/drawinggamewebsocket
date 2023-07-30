@@ -6,11 +6,13 @@ import de.weissbeb.other.getRandomWords
 import de.weissbeb.other.matchesWord
 import de.weissbeb.other.transformToUnderscores
 import de.weissbeb.other.words
+import de.weissbeb.server
 import io.ktor.http.cio.websocket.*
 import kotlinx.coroutines.*
+import java.util.concurrent.ConcurrentHashMap
 
 class Room(
-    val name: String,
+    val roomName: String,
     val maxPlayers: Int,
     var players: List<Player> = listOf()
 ) {
@@ -23,6 +25,10 @@ class Room(
     private var drawingPlayerIndex = 0
     private var phaseStartTime = 0L
 
+    //saves clientId including a job that will remove a player fromt the game with a delay
+    //why delay? non-voluntary disconnects after which the player tries to rejoin won't lead to a immediate removal!
+    private val playerRemoveJobs = ConcurrentHashMap<String, Job>()
+    private val leftPlayers = ConcurrentHashMap<String, Pair<Player, Int>>()
 
     /**
      * functions and stuff relating to different Phases concerns changes in game's state and at what point in time
@@ -86,8 +92,39 @@ class Room(
     }
 
     fun removePlayer(clientId: String){
+        val player = players.find { it.clientId == clientId } ?: return
+
+        val index = players.indexOf(player)
+        leftPlayers[clientId] = player to index
+        players = players - player
+
+        playerRemoveJobs[clientId] = GlobalScope.launch {
+            delay(PLAYER_REMOVE_TIME)
+            val player2Remove = leftPlayers[clientId]
+            leftPlayers.remove(clientId)
+            player2Remove?.let{
+                players = players - it.first
+            }
+            playerRemoveJobs.remove(clientId)
+        }
+        val announcement = Announcement(
+            "Player ${player.username} left the party",
+            System.currentTimeMillis(),
+            Announcement.TYPE_PLAYER_LEFT
+        )
+
         GlobalScope.launch {
             broadcastPlayerStates()
+            broadcast(gson.toJson(announcement))
+
+            //only one or no player left, no more game possible - handle
+            if(players.size == 1){
+                phase = Phase.WAITING_FOR_PLAYERS
+                timerJob?.cancel()
+            } else if(players.isEmpty()){
+                kill()
+                server.rooms.remove(roomName)
+            }
         }
     }
 
@@ -280,7 +317,7 @@ class Room(
             )
             drawingPlayer?.socket?.send(Frame.Text(gson.toJson(gameState4DrawingPlayer)))
             timeAndNotify(DELAY_GAME_RUNNING_2_SHOW_WORD)
-            println("drawing phase in room $name started")
+            println("drawing phase in room $roomName started")
         }
     }
 
@@ -315,7 +352,7 @@ class Room(
             broadcastPlayerStates()
             //broadcast the result to everbody
             word2Guess?.let {
-                val chosenWord = ChosenWord(it, name)
+                val chosenWord = ChosenWord(it, roomName)
                 broadcast(gson.toJson(chosenWord))
             }
             //start phasechange
@@ -323,6 +360,16 @@ class Room(
             val phaseChange = PhaseChange(Phase.SHOW_WORD, DELAY_SHOW_WORD_2_NEW_ROUND)
             broadcast(gson.toJson(phaseChange))
         }
+    }
+
+    /**
+     * cancel all running jobs
+     */
+    private fun kill(){
+        playerRemoveJobs.values.forEach {
+            it.cancel()
+        }
+        timerJob?.cancel()
     }
 
     enum class Phase {
@@ -335,6 +382,8 @@ class Room(
 
     companion object {
         const val UPDATE_TIME_FREQ = 1000L //time updates sent to clients
+        const val PLAYER_REMOVE_TIME = 60000L
+
         const val DELAY_WAITING_FOR_START_2_NEW_ROUND = 10000L
         const val DELAY_NEW_ROUND_2_GAME_RUNNING = 20000L
         const val DELAY_GAME_RUNNING_2_SHOW_WORD = 60000L

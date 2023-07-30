@@ -70,7 +70,7 @@ fun Route.getRoomsRoute() {
                 it.contains(searchQuery, ignoreCase = true)
             }
             val roomResponses = roomsResult.values.map {
-                RoomResponse(it.name, it.maxPlayers, it.players.size)
+                RoomResponse(it.roomName, it.maxPlayers, it.players.size)
             }.sortedBy { it.name }
 
             call.respond(HttpStatusCode.OK, roomResponses)
