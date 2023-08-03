@@ -46,7 +46,14 @@ fun Route.gameWebSocketRoute() {
                     if (room.phase == Room.Phase.GAME_RUNNING) {
                         //send to all player except the one drawing...
                         room.broadcastToAllExcept(message, clientId)
+                        room.addSerializedDrawInfo(message)
                     }
+                }
+
+                is DrawAction -> { //pong, actually
+                    val room = server.getRoomWithClientId(clientId) ?: return@standardWebSocket
+                    room.broadcastToAllExcept(message, clientId)
+                    room.addSerializedDrawInfo(message)
                 }
 
                 is ChosenWord -> {
@@ -66,6 +73,11 @@ fun Route.gameWebSocketRoute() {
                 is Ping -> { //pong, actually
                     server.players[clientId]?.receivedPong()
                 }
+
+                is DisconnectRequest -> { //pong, actually
+                    server.playerLeft(clientId, true)
+                }
+
             }
 
         }
@@ -110,6 +122,9 @@ fun Route.standardWebSocket(
                         Constants.TYPE_CHOSEN_WORD -> ChosenWord::class.java
                         Constants.TYPE_GAME_STATE -> GameState::class.java
                         Constants.TYPE_PING -> Ping::class.java
+                        Constants.TYPE_DISCONNECT_REQUEST -> DisconnectRequest::class.java
+                        Constants.TYPE_DRAW_ACTION -> DrawAction::class.java
+                        Constants.TYPE_CURRENT_ROUND_DRAW_INFO -> RoundDrawInfo::class.java
                         else -> BaseModel::class.java
                     }
                     val payload = gson.fromJson(msg, type)

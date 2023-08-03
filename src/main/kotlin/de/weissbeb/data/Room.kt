@@ -30,6 +30,22 @@ class Room(
     private val playerRemoveJobs = ConcurrentHashMap<String, Job>()
     private val leftPlayers = ConcurrentHashMap<String, Pair<Player, Int>>()
 
+    private var curRoundDrawData : List<String> = listOf()
+
+    /** extend current drawing with one action
+     *
+     */
+    fun addSerializedDrawInfo(drawAction : String) {
+        curRoundDrawData = curRoundDrawData + drawAction
+    }
+
+    private suspend fun sendCurrentRoundDrawInfoToPlayer(player: Player){
+        if(phase == Phase.GAME_RUNNING || phase == Phase.SHOW_WORD){
+            player.socket.send(Frame.Text(gson.toJson(RoundDrawInfo(curRoundDrawData))))
+        }
+    }
+
+
     /**
      * functions and stuff relating to different Phases concerns changes in game's state and at what point in time
      * the players currently are!
@@ -112,6 +128,7 @@ class Room(
 
         sendWordToPlayer(playerAdded)
         broadcastPlayerStates()
+        sendCurrentRoundDrawInfoToPlayer(playerAdded)
         broadcast(gson.toJson(anncmt))
         return playerAdded
     }
@@ -298,6 +315,7 @@ class Room(
     }
 
     private fun newRound() {
+        curRoundDrawData = listOf()
         currWords = getRandomWords()
         val newWords = NewWords(currWords!!)
         nextDrawingPlayer()
