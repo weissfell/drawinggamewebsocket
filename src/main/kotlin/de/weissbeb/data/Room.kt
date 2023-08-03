@@ -31,12 +31,23 @@ class Room(
     private val leftPlayers = ConcurrentHashMap<String, Pair<Player, Int>>()
 
     private var curRoundDrawData : List<String> = listOf()
+    var lastDrawData : DrawData? = null //this exists for fixing a bug related to the final draw move before time runs out
 
     /** extend current drawing with one action
      *
      */
     fun addSerializedDrawInfo(drawAction : String) {
         curRoundDrawData = curRoundDrawData + drawAction
+    }
+
+    private suspend fun finishOfDrawing(){
+        lastDrawData?.let {
+            if(curRoundDrawData.isNotEmpty() && it.motionEvent == 2) { //2 = move, not button up!
+                //as last motion was move not button / finger up we will add this manually
+                val finishDrawData = it.copy(motionEvent = 1)
+                broadcast(gson.toJson(finishDrawData))
+            }
+        }
     }
 
     private suspend fun sendCurrentRoundDrawInfoToPlayer(player: Player){
@@ -208,9 +219,15 @@ class Room(
             //repeat has finished so now change phase..
             phase = when (phase) {
                 Phase.WAITING_FOR_START -> Phase.NEW_ROUND
-                Phase.GAME_RUNNING -> Phase.SHOW_WORD
+                Phase.GAME_RUNNING -> {
+                    finishOfDrawing()
+                    Phase.SHOW_WORD
+                }
                 Phase.SHOW_WORD -> Phase.NEW_ROUND
-                Phase.NEW_ROUND -> Phase.GAME_RUNNING
+                Phase.NEW_ROUND -> {
+                    word2Guess = null
+                    Phase.GAME_RUNNING
+                }
                 else -> Phase.WAITING_FOR_PLAYERS
             }
         }
